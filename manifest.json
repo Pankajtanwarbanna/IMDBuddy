@@ -6,7 +6,8 @@
     "author": "Pankaj Tanwar",
     "description": "Get instant IMDb ratings while browsing Netflix, Hotstar, Prime Video & other streaming platforms.",
     "permissions": [
-        "storage"
+        "storage",
+        "tabs"
     ],
     "host_permissions": [
         "https://*.hotstar.com/*",
@@ -24,6 +25,7 @@
                 "https://*.primevideo.com/*"
             ],
             "js": [
+                "common.js",
                 "content.js"
             ],
             "css": [

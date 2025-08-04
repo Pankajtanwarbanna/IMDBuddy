@@ -109,7 +109,6 @@
             font-size: 12px;
             font-weight: 500;
             color: #ccc;
-            transition: all 0.2s ease;
         }
 
         .platform-badge.active {
@@ -162,10 +161,12 @@
             100% { opacity: 1; }
         }
     </style>
+    <script src="common.js"></script>
+    <script src="popup.js"></script>
 </head>
 <body>
     <div class="version">v3.0</div>
-    
+
     <div class="container">
         <div class="header">
             <div class="logo">IMDBuddy</div>
@@ -192,10 +193,10 @@
         <div class="platforms">
             <div class="platforms-title">Supported Platforms</div>
             <div class="platform-list">
-                <span class="platform-badge active">Hotstar</span>
-                <span class="platform-badge">Disney+</span>
-                <span class="platform-badge">Netflix</span>
-                <span class="platform-badge">Prime Video</span>
+                <span class="platform-badge" id="platform-badge-hotstar">Hotstar</span>
+                <span class="platform-badge" id="platform-badge-disney">Disney+</span>
+                <span class="platform-badge" id="platform-badge-netflix">Netflix</span>
+                <span class="platform-badge" id="platform-badge-primevideo">Prime Video</span>
             </div>
         </div>
 
