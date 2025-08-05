@@ -37,12 +37,10 @@
     const TitleExtractor = {
         extract(element, platformConfig) {
             const result = platformConfig.extractTitle(element, platformConfig.titleSelectors);
-
             // Debug logging for all platforms when extraction fails
             if (!result) {
                 const hostname = window.location.hostname;
                 console.log(`Title extraction failed for ${hostname}:`, element);
-
                 if (hostname.includes('hotstar.com') || hostname.includes('disneyplus.com')) {
                     console.log('=== HOTSTAR DEBUG INFO ===');
                     console.log('Available aria-label elements:', element.querySelectorAll('[aria-label]'));
@@ -50,7 +48,6 @@
                     console.log('Available elements with title attr:', element.querySelectorAll('[title]'));
                     console.log('Available h3/h4 elements:', element.querySelectorAll('h3, h4'));
                     console.log('Available a elements with aria-label:', element.querySelectorAll('a[aria-label]'));
-
                     // Log all text content
                     const allElements = element.querySelectorAll('*');
                     console.log('All elements with text content:');
@@ -75,7 +72,6 @@
                     console.log('Available fallback text:', element.querySelectorAll('.fallback-text'));
                 }
             }
-
             return result;
         }
     };
@@ -284,7 +280,6 @@
 
         async processRequest({ title, type, cacheKey, resolve }) {
             this.activeRequests++;
-
             try {
                 await this.waitForRateLimit();
                 const rating = await this.fetchFromApi(title, type, cacheKey);
@@ -304,10 +299,8 @@
 
         async waitForRateLimit() {
             const now = Date.now();
-
             // Clean old request times (older than 1 second)
             this.requestTimes = this.requestTimes.filter(time => now - time < 1000);
-
             // If we have 9 or more requests in the last second, wait
             if (this.requestTimes.length >= 9) {
                 const oldestRequest = Math.min(...this.requestTimes);
@@ -336,7 +329,6 @@
                         }
                     }
                 );
-
                 clearTimeout(timeoutId);
 
                 // Handle rate limiting with exponential backoff
@@ -369,7 +361,6 @@
                             data: rating,
                             timestamp: Date.now()
                         };
-
                         // Save cache asynchronously to not block the request
                         this.saveCache();
                         return rating;
@@ -416,7 +407,6 @@
             if (container) {
                 container.style.position = 'relative';
                 container.appendChild(overlay);
-
                 // Debug logging for all platforms
                 const hostname = window.location.hostname;
                 if (hostname.includes('hotstar.com') || hostname.includes('disneyplus.com')) {
@@ -454,7 +444,6 @@
             }
 
             console.log(`IMDB Ratings Extension initialized for ${this.platform.config.name}`);
-
             await ApiService.init();
             this.setupObserver();
             setTimeout(() => this.processExistingCards(), BASE_CONFIG.OBSERVER_DELAY);
@@ -473,7 +462,6 @@
             const cards = this.findCards();
             const cardBatch = [];
             const processedTitles = new Set(); // Track processed titles to avoid duplicates
-
             for (const card of cards) {
                 if (this.processedElements.has(card)) continue;
 
@@ -486,12 +474,10 @@
                     console.log(`Skipping duplicate title: ${titleData.title}`);
                     continue;
                 }
-
                 processedTitles.add(titleKey);
                 this.processedElements.add(card);
                 cardBatch.push({ card, titleData });
             }
-
             // Process cards in batch for better performance
             this.processBatch(cardBatch);
         },
@@ -506,11 +492,9 @@
         findCards() {
             const cards = [];
             const hostname = window.location.hostname;
-
             for (const selector of this.platform.config.cardSelectors) {
                 const foundCards = document.querySelectorAll(selector);
                 cards.push(...foundCards);
-
                 // Debug logging for all platforms
                 if (foundCards.length > 0) {
                     if (hostname.includes('hotstar.com') || hostname.includes('disneyplus.com')) {
@@ -520,11 +504,8 @@
                     }
                 }
             }
-
             const filteredCards = cards.filter(card => !card.querySelector('.imdb-rating-overlay'));
-
             console.log(`${hostname} - Total cards found: ${cards.length}, After filtering: ${filteredCards.length}`);
-
             return filteredCards;
         },
 
@@ -533,7 +514,6 @@
                 console.log('Processing card with title data:', titleData);
                 const rating = await ApiService.getRating(titleData);
                 console.log('Received rating:', rating);
-
                 if (rating) {
                     const overlay = Overlay.create(rating);
                     Overlay.addTo(element, overlay, this.platform.config);
