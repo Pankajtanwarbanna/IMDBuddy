@@ -37,7 +37,6 @@
     const TitleExtractor = {
         extract(element, platformConfig) {
             const result = platformConfig.extractTitle(element, platformConfig.titleSelectors);
-
             // Debug logging for all platforms when extraction fails
             if (!result) {
                 const hostname = window.location.hostname;
