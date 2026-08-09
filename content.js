@@ -8,10 +8,32 @@
         STORAGE_KEY: 'imdb_cache',
         MIN_MATCH_SCORE: 0.7,
         OBSERVER_DELAY: 3000,
-        API_URL: 'https://api.imdbapi.dev/search/titles',
+        // api.imdbapi.dev went permanently offline (domain no longer resolves).
+        // Replaced with two free, key-less, CORS-open public endpoints:
+        //   1) IMDb's own title-suggestion endpoint (same one imdb.com's search box uses)
+        //   2) Cinemeta (Stremio's public metadata service) for the actual IMDb rating
+        SUGGESTION_API_URL: 'https://v3.sg.media-imdb.com/suggestion',
+        CINEMETA_API_URL: 'https://v3-cinemeta.strem.io/meta',
         CACHE_MAX_AGE: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
         MAX_CONCURRENT_REQUESTS: 5 // Allow multiple requests in parallel
     };
+
+    // Maps IMDb suggestion "q" values to our internal type + Cinemeta's URL type segment.
+    // IMDb suggestion types: feature, tvSeries, tvMiniSeries, tvMovie, tvEpisode, short, video, videoGame
+    // Cinemeta only understands two URL types: "movie" and "series"
+    const IMDB_TYPE_MAP = {
+        feature: { internalType: 'movie', cinemetaType: 'movie' },
+        tvMovie: { internalType: 'movie', cinemetaType: 'movie' },
+        short: { internalType: 'movie', cinemetaType: 'movie' },
+        video: { internalType: 'movie', cinemetaType: 'movie' },
+        tvSeries: { internalType: 'tvSeries', cinemetaType: 'series' },
+        tvMiniSeries: { internalType: 'tvSeries', cinemetaType: 'series' },
+        tvSpecial: { internalType: 'tvSeries', cinemetaType: 'series' }
+    };
+
+    function resolveImdbType(q) {
+        return IMDB_TYPE_MAP[q] || { internalType: q || null, cinemetaType: 'movie' };
+    }
 
     // Platform-Specific Configurations
     const PLATFORM_CONFIGS = {
@@ -477,9 +499,11 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-                const response = await fetch(
-                    `${BASE_CONFIG.API_URL}?query=${encodeURIComponent(title)}`,
-                    { 
+                // Step 1: resolve the title to an IMDb id via IMDb's own public suggestion endpoint.
+                const firstChar = (title.trim()[0] || 'a').toLowerCase();
+                const suggestionResponse = await fetch(
+                    `${BASE_CONFIG.SUGGESTION_API_URL}/${encodeURIComponent(firstChar)}/${encodeURIComponent(title)}.json`,
+                    {
                         method: 'GET',
                         signal: controller.signal,
                         headers: {
@@ -487,11 +511,11 @@
                         }
                     }
                 );
-                
+
                 clearTimeout(timeoutId);
 
                 // Handle rate limiting with exponential backoff
-                if (response.status === 429) {
+                if (suggestionResponse.status === 429) {
                     if (retryCount < 2) {
                         const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -500,31 +524,81 @@
                     return null;
                 }
 
-                if (!response.ok || response.status === 499) return null;
+                if (!suggestionResponse.ok || suggestionResponse.status === 499) return null;
 
-                const data = await response.json();
-                if (data?.titles?.length > 0) {
-                    const bestMatch = FuzzyMatcher.findBestMatch(title, data.titles, expectedType);
+                const suggestionData = await suggestionResponse.json();
+                const candidates = suggestionData?.d || [];
+                if (candidates.length === 0) return null;
 
-                    if (bestMatch && bestMatch.result.rating?.aggregateRating > 0) {
-                        const rating = {
-                            score: bestMatch.result.rating.aggregateRating.toFixed(1),
-                            votes: this.formatVotes(bestMatch.result.rating.voteCount || 0),
-                            confidence: bestMatch.score.toFixed(2),
-                            matchedTitle: bestMatch.result.primaryTitle || bestMatch.result.title,
-                            type: bestMatch.result.titleType || bestMatch.result.type
+                // Normalize candidates into the shape FuzzyMatcher already expects,
+                // carrying the imdbId + cinemetaType through for the second lookup.
+                const normalizedCandidates = candidates
+                    .filter(c => c.id && c.id.startsWith('tt')) // skip non-title suggestions (e.g. people, awards)
+                    .map(c => {
+                        const { internalType, cinemetaType } = resolveImdbType(c.qid);
+                        return {
+                            primaryTitle: c.l,
+                            titleType: internalType,
+                            imdbId: c.id,
+                            cinemetaType
                         };
+                    });
 
-                        // Store with timestamp for cache expiration
-                        this.cache[cacheKey] = {
-                            data: rating,
-                            timestamp: Date.now()
-                        };
-                        
-                        // Save cache asynchronously to not block the request
-                        this.saveCache();
-                        return rating;
+                if (normalizedCandidates.length === 0) return null;
+
+                const bestMatch = FuzzyMatcher.findBestMatch(title, normalizedCandidates, expectedType);
+                if (!bestMatch) return null;
+
+                // Step 2: fetch the actual IMDb rating for the resolved id via Cinemeta.
+                const ratingController = new AbortController();
+                const ratingTimeoutId = setTimeout(() => ratingController.abort(), 5000);
+
+                const cinemetaResponse = await fetch(
+                    `${BASE_CONFIG.CINEMETA_API_URL}/${bestMatch.result.cinemetaType}/${bestMatch.result.imdbId}.json`,
+                    {
+                        method: 'GET',
+                        signal: ratingController.signal,
+                        headers: {
+                            'Accept': 'application/json'
+                        }
                     }
+                );
+
+                clearTimeout(ratingTimeoutId);
+
+                if (cinemetaResponse.status === 429) {
+                    if (retryCount < 2) {
+                        const delay = Math.pow(2, retryCount) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return this.fetchFromApi(title, expectedType, cacheKey, retryCount + 1);
+                    }
+                    return null;
+                }
+
+                if (!cinemetaResponse.ok) return null;
+
+                const cinemetaData = await cinemetaResponse.json();
+                const meta = cinemetaData?.meta;
+                const imdbRating = parseFloat(meta?.imdbRating);
+
+                if (meta && imdbRating > 0) {
+                    const rating = {
+                        score: imdbRating.toFixed(1),
+                        votes: this.formatVotes(meta.imdbVotes || 0),
+                        confidence: bestMatch.score.toFixed(2),
+                        matchedTitle: meta.name || bestMatch.result.primaryTitle,
+                        type: bestMatch.result.titleType
+                    };
+
+                    // Store with timestamp for cache expiration
+                    this.cache[cacheKey] = {
+                        data: rating,
+                        timestamp: Date.now()
+                    };
+
+                    // Save cache asynchronously to not block the request
+                    this.saveCache();
+                    return rating;
                 }
             } catch (error) {
                 // Retry on network errors (but not on abort)
