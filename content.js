@@ -8,19 +8,12 @@
         STORAGE_KEY: 'imdb_cache',
         MIN_MATCH_SCORE: 0.7,
         OBSERVER_DELAY: 3000,
-        // api.imdbapi.dev went permanently offline (domain no longer resolves).
-        // Replaced with two free, key-less, CORS-open public endpoints:
-        //   1) IMDb's own title-suggestion endpoint (same one imdb.com's search box uses)
-        //   2) Cinemeta (Stremio's public metadata service) for the actual IMDb rating
         SUGGESTION_API_URL: 'https://v3.sg.media-imdb.com/suggestion',
         CINEMETA_API_URL: 'https://v3-cinemeta.strem.io/meta',
         CACHE_MAX_AGE: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
         MAX_CONCURRENT_REQUESTS: 5 // Allow multiple requests in parallel
     };
 
-    // Maps IMDb suggestion "q" values to our internal type + Cinemeta's URL type segment.
-    // IMDb suggestion types: feature, tvSeries, tvMiniSeries, tvMovie, tvEpisode, short, video, videoGame
-    // Cinemeta only understands two URL types: "movie" and "series"
     const IMDB_TYPE_MAP = {
         feature: { internalType: 'movie', cinemetaType: 'movie' },
         tvMovie: { internalType: 'movie', cinemetaType: 'movie' },
@@ -495,12 +488,6 @@
         },
 
         async fetchSuggestion(firstChar, title) {
-            // Routed through the background service worker to avoid CORS:
-            // IMDb's suggestion endpoint only returns Access-Control-Allow-Origin
-            // for requests originating from imdb.com itself. Content scripts run
-            // in the page's origin (e.g. netflix.com) and get blocked. The
-            // background service worker is exempt from that enforcement as long
-            // as the target origin is declared in manifest.json's host_permissions.
             return new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage(
                     { type: 'IMDBUDDY_FETCH_SUGGESTION', firstChar, title },
@@ -517,11 +504,9 @@
 
         async fetchFromApi(title, expectedType, cacheKey, retryCount = 0) {
             try {
-                // Step 1: resolve the title to an IMDb id via IMDb's own public suggestion endpoint.
                 const firstChar = (title.trim()[0] || 'a').toLowerCase();
                 const suggestionResult = await this.fetchSuggestion(firstChar, title);
 
-                // Handle rate limiting with exponential backoff
                 if (suggestionResult.status === 429) {
                     if (retryCount < 2) {
                         const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
@@ -537,10 +522,8 @@
                 const candidates = suggestionData?.d || [];
                 if (candidates.length === 0) return null;
 
-                // Normalize candidates into the shape FuzzyMatcher already expects,
-                // carrying the imdbId + cinemetaType through for the second lookup.
                 const normalizedCandidates = candidates
-                    .filter(c => c.id && c.id.startsWith('tt')) // skip non-title suggestions (e.g. people, awards)
+                    .filter(c => c.id && c.id.startsWith('tt'))
                     .map(c => {
                         const { internalType, cinemetaType } = resolveImdbType(c.qid);
                         return {
@@ -556,7 +539,6 @@
                 const bestMatch = FuzzyMatcher.findBestMatch(title, normalizedCandidates, expectedType);
                 if (!bestMatch) return null;
 
-                // Step 2: fetch the actual IMDb rating for the resolved id via Cinemeta.
                 const ratingController = new AbortController();
                 const ratingTimeoutId = setTimeout(() => ratingController.abort(), 5000);
 
@@ -596,7 +578,6 @@
                         type: bestMatch.result.titleType
                     };
 
-                    // Store with timestamp for cache expiration
                     this.cache[cacheKey] = {
                         data: rating,
                         timestamp: Date.now()

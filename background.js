@@ -1,13 +1,5 @@
 'use strict';
 
-// Background service worker.
-// Chrome exempts background/service-worker fetches from CORS enforcement
-// when the target origin is declared in manifest.json's host_permissions.
-// Content scripts run in the page's origin and do NOT get that exemption,
-// which is why the IMDb suggestion endpoint (locked to imdb.com's own
-// origin) works fine when called from here but gets blocked by CORS when
-// called directly from content.js.
-
 const SUGGESTION_API_URL = 'https://v3.sg.media-imdb.com/suggestion';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -44,5 +36,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
     })();
 
-    return true; // keep the message channel open for the async response
+    return true;
 });
