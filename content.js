@@ -107,23 +107,29 @@
         netflix: {
             name: 'Netflix',
             hostnames: ['netflix.com'],
-            cardSelectors: ['.slider-item', '.title-card', '.gallery-item', '.title-card-container'],
+            cardSelectors: ['a[data-uia="standard-card"]', 'a[data-uia="ranked-card"]', '.slider-item', '.title-card', '.gallery-item', '.title-card-container'],
             titleSelectors: ['a[aria-label]', '.fallback-text', '[aria-label]'],
             imageContainerSelectors: ['.boxart-container', '.title-card-container'],
             extractTitle: (element, selectors) => {
-                // Try aria-label from link first (most reliable)
+                const ownAriaLabel = element.getAttribute('aria-label')?.trim();
+                if (ownAriaLabel) {
+                    return {
+                        title: ownAriaLabel.split('•')[0].trim(),
+                        type: null
+                    };
+                }
+
                 const linkWithAriaLabel = element.querySelector('a[aria-label]');
                 if (linkWithAriaLabel) {
                     const ariaLabel = linkWithAriaLabel.getAttribute('aria-label')?.trim();
                     if (ariaLabel) {
                         return {
-                            title: ariaLabel.split('•')[0].trim(), // Netflix sometimes uses "Title • Year" format
-                            type: null // Netflix doesn't clearly distinguish in DOM
+                            title: ariaLabel.split('•')[0].trim(),
+                            type: null
                         };
                     }
                 }
 
-                // Fallback to other selectors
                 for (const selector of selectors) {
                     const el = element.querySelector(selector);
                     if (!el) continue;
@@ -136,8 +142,8 @@
                     if (!title) continue;
 
                     return {
-                        title: title.split('•')[0].trim(), // Netflix format: "Title • Year"
-                        type: null // Netflix doesn't clearly distinguish in DOM
+                        title: title.split('•')[0].trim(),
+                        type: null
                     };
                 }
                 return null;
