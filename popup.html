@@ -49,43 +49,6 @@
             margin: 0 auto;
         }
 
-        .status-banner {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin: 20px 0;
-            padding: 14px 16px;
-            background: #1a1a1a;
-            border-radius: 12px;
-            border: 1px solid #333;
-            font-size: 13px;
-            font-weight: 600;
-            color: #f5c518;
-        }
-
-        .status-banner.inactive {
-            color: #999;
-        }
-
-        .status-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #f5c518;
-            flex-shrink: 0;
-        }
-
-        .status-banner.inactive .status-dot {
-            background: #666;
-            animation: none;
-        }
-
-        .status-banner:not(.inactive) .status-dot {
-            animation: pulse 2s infinite;
-        }
-
         .features {
             display: flex;
             justify-content: center;
@@ -178,11 +141,6 @@
             <div class="description">
                 Never wonder "Is this worth watching?" again. See trusted IMDb ratings instantly on any streaming platform.
             </div>
-        </div>
-
-        <div class="status-banner" id="site-status">
-            <span class="status-dot"></span>
-            Checking current site&hellip;
         </div>
 
         <div class="features">

@@ -18,17 +18,6 @@ function render(matched) {
         const isMatch = matched && badge.dataset.platform === matched.key;
         badge.classList.toggle('active', Boolean(isMatch));
     });
-
-    const statusEl = document.getElementById('site-status');
-    if (!statusEl) return;
-
-    if (matched) {
-        statusEl.textContent = `Active on ${matched.label}`;
-        statusEl.classList.remove('inactive');
-    } else {
-        statusEl.textContent = 'Not active on this site';
-        statusEl.classList.add('inactive');
-    }
 }
 
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
