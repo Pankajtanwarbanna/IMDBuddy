@@ -49,35 +49,19 @@
             margin: 0 auto;
         }
 
-        .stats {
+        .features {
             display: flex;
-            justify-content: space-between;
-            margin: 24px 0;
-            padding: 16px;
-            background: #1a1a1a;
-            border-radius: 12px;
-            border: 1px solid #333;
-        }
-
-        .stat {
-            text-align: center;
-            flex: 1;
-        }
-
-        .stat-number {
-            font-size: 24px;
-            font-weight: 600;
-            color: #f5c518;
-            display: block;
-        }
-
-        .stat-label {
-            font-size: 11px;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 24px;
+            font-size: 12px;
             color: #aaa;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 2px;
+        }
+
+        .feature {
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .platforms {
@@ -145,22 +129,6 @@
             color: #666;
             font-weight: 500;
         }
-
-        .status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background: #f5c518;
-            border-radius: 50%;
-            margin-right: 6px;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.3; }
-            100% { opacity: 1; }
-        }
     </style>
 </head>
 <body>
@@ -169,33 +137,24 @@
     <div class="container">
         <div class="header">
             <div class="logo">IMDBuddy</div>
-            <div class="tagline">
-                <span class="status-indicator"></span>
-                Smart IMDB ratings for streaming
-            </div>
+            <div class="tagline">Smart IMDb ratings for streaming</div>
             <div class="description">
-                Never wonder "Is this worth watching?" again. See trusted IMDB ratings instantly on any streaming platform.
+                Never wonder "Is this worth watching?" again. See trusted IMDb ratings instantly on any streaming platform.
             </div>
         </div>
 
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-number">✨</span>
-                <span class="stat-label">Smart Matching</span>
-            </div>
-            <div class="stat">
-                <span class="stat-number">⚡</span>
-                <span class="stat-label">Instant Results</span>
-            </div>
+        <div class="features">
+            <div class="feature">✨ Smart Matching</div>
+            <div class="feature">⚡ Instant Results</div>
         </div>
 
         <div class="platforms">
             <div class="platforms-title">Supported Platforms</div>
             <div class="platform-list">
-                <span class="platform-badge active">Hotstar</span>
-                <span class="platform-badge">Disney+</span>
-                <span class="platform-badge">Netflix</span>
-                <span class="platform-badge">Prime Video</span>
+                <span class="platform-badge" data-platform="hotstar">Hotstar</span>
+                <span class="platform-badge" data-platform="disneyplus">Disney+</span>
+                <span class="platform-badge" data-platform="netflix">Netflix</span>
+                <span class="platform-badge" data-platform="prime">Prime Video</span>
             </div>
         </div>
 
@@ -203,5 +162,6 @@
             <a href="https://x.com/intent/user?screen_name=the2ndfloorguy" class="creator-link" target="_blank">@the2ndfloorguy</a>
         </div>
     </div>
+    <script src="popup.js"></script>
 </body>
 </html>
