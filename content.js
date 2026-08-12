@@ -8,10 +8,25 @@
         STORAGE_KEY: 'imdb_cache',
         MIN_MATCH_SCORE: 0.7,
         OBSERVER_DELAY: 3000,
-        API_URL: 'https://api.imdbapi.dev/search/titles',
+        SUGGESTION_API_URL: 'https://v3.sg.media-imdb.com/suggestion',
+        CINEMETA_API_URL: 'https://v3-cinemeta.strem.io/meta',
         CACHE_MAX_AGE: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
         MAX_CONCURRENT_REQUESTS: 5 // Allow multiple requests in parallel
     };
+
+    const IMDB_TYPE_MAP = {
+        feature: { internalType: 'movie', cinemetaType: 'movie' },
+        tvMovie: { internalType: 'movie', cinemetaType: 'movie' },
+        short: { internalType: 'movie', cinemetaType: 'movie' },
+        video: { internalType: 'movie', cinemetaType: 'movie' },
+        tvSeries: { internalType: 'tvSeries', cinemetaType: 'series' },
+        tvMiniSeries: { internalType: 'tvSeries', cinemetaType: 'series' },
+        tvSpecial: { internalType: 'tvSeries', cinemetaType: 'series' }
+    };
+
+    function resolveImdbType(q) {
+        return IMDB_TYPE_MAP[q] || { internalType: q || null, cinemetaType: 'movie' };
+    }
 
     // Platform-Specific Configurations
     const PLATFORM_CONFIGS = {
@@ -92,23 +107,29 @@
         netflix: {
             name: 'Netflix',
             hostnames: ['netflix.com'],
-            cardSelectors: ['.slider-item', '.title-card', '.gallery-item', '.title-card-container'],
+            cardSelectors: ['a[data-uia="standard-card"]', 'a[data-uia="ranked-card"]', '.slider-item', '.title-card', '.gallery-item', '.title-card-container'],
             titleSelectors: ['a[aria-label]', '.fallback-text', '[aria-label]'],
             imageContainerSelectors: ['.boxart-container', '.title-card-container'],
             extractTitle: (element, selectors) => {
-                // Try aria-label from link first (most reliable)
+                const ownAriaLabel = element.getAttribute('aria-label')?.trim();
+                if (ownAriaLabel) {
+                    return {
+                        title: ownAriaLabel.split('•')[0].trim(),
+                        type: null
+                    };
+                }
+
                 const linkWithAriaLabel = element.querySelector('a[aria-label]');
                 if (linkWithAriaLabel) {
                     const ariaLabel = linkWithAriaLabel.getAttribute('aria-label')?.trim();
                     if (ariaLabel) {
                         return {
-                            title: ariaLabel.split('•')[0].trim(), // Netflix sometimes uses "Title • Year" format
-                            type: null // Netflix doesn't clearly distinguish in DOM
+                            title: ariaLabel.split('•')[0].trim(),
+                            type: null
                         };
                     }
                 }
 
-                // Fallback to other selectors
                 for (const selector of selectors) {
                     const el = element.querySelector(selector);
                     if (!el) continue;
@@ -121,8 +142,8 @@
                     if (!title) continue;
 
                     return {
-                        title: title.split('•')[0].trim(), // Netflix format: "Title • Year"
-                        type: null // Netflix doesn't clearly distinguish in DOM
+                        title: title.split('•')[0].trim(),
+                        type: null
                     };
                 }
                 return null;
@@ -472,26 +493,27 @@
             this.requestTimes.push(Date.now());
         },
 
-        async fetchFromApi(title, expectedType, cacheKey, retryCount = 0) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-                const response = await fetch(
-                    `${BASE_CONFIG.API_URL}?query=${encodeURIComponent(title)}`,
-                    { 
-                        method: 'GET',
-                        signal: controller.signal,
-                        headers: {
-                            'Accept': 'application/json'
+        async fetchSuggestion(firstChar, title) {
+            return new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                    { type: 'IMDBUDDY_FETCH_SUGGESTION', firstChar, title },
+                    (response) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                            return;
                         }
+                        resolve(response);
                     }
                 );
-                
-                clearTimeout(timeoutId);
+            });
+        },
 
-                // Handle rate limiting with exponential backoff
-                if (response.status === 429) {
+        async fetchFromApi(title, expectedType, cacheKey, retryCount = 0) {
+            try {
+                const firstChar = (title.trim()[0] || 'a').toLowerCase();
+                const suggestionResult = await this.fetchSuggestion(firstChar, title);
+
+                if (suggestionResult.status === 429) {
                     if (retryCount < 2) {
                         const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -500,31 +522,76 @@
                     return null;
                 }
 
-                if (!response.ok || response.status === 499) return null;
+                if (!suggestionResult.ok || suggestionResult.status === 499) return null;
 
-                const data = await response.json();
-                if (data?.titles?.length > 0) {
-                    const bestMatch = FuzzyMatcher.findBestMatch(title, data.titles, expectedType);
+                const suggestionData = suggestionResult.data;
+                const candidates = suggestionData?.d || [];
+                if (candidates.length === 0) return null;
 
-                    if (bestMatch && bestMatch.result.rating?.aggregateRating > 0) {
-                        const rating = {
-                            score: bestMatch.result.rating.aggregateRating.toFixed(1),
-                            votes: this.formatVotes(bestMatch.result.rating.voteCount || 0),
-                            confidence: bestMatch.score.toFixed(2),
-                            matchedTitle: bestMatch.result.primaryTitle || bestMatch.result.title,
-                            type: bestMatch.result.titleType || bestMatch.result.type
+                const normalizedCandidates = candidates
+                    .filter(c => c.id && c.id.startsWith('tt'))
+                    .map(c => {
+                        const { internalType, cinemetaType } = resolveImdbType(c.qid);
+                        return {
+                            primaryTitle: c.l,
+                            titleType: internalType,
+                            imdbId: c.id,
+                            cinemetaType
                         };
+                    });
 
-                        // Store with timestamp for cache expiration
-                        this.cache[cacheKey] = {
-                            data: rating,
-                            timestamp: Date.now()
-                        };
-                        
-                        // Save cache asynchronously to not block the request
-                        this.saveCache();
-                        return rating;
+                if (normalizedCandidates.length === 0) return null;
+
+                const bestMatch = FuzzyMatcher.findBestMatch(title, normalizedCandidates, expectedType);
+                if (!bestMatch) return null;
+
+                const ratingController = new AbortController();
+                const ratingTimeoutId = setTimeout(() => ratingController.abort(), 5000);
+
+                const cinemetaResponse = await fetch(
+                    `${BASE_CONFIG.CINEMETA_API_URL}/${bestMatch.result.cinemetaType}/${bestMatch.result.imdbId}.json`,
+                    {
+                        method: 'GET',
+                        signal: ratingController.signal,
+                        headers: {
+                            'Accept': 'application/json'
+                        }
                     }
+                );
+
+                clearTimeout(ratingTimeoutId);
+
+                if (cinemetaResponse.status === 429) {
+                    if (retryCount < 2) {
+                        const delay = Math.pow(2, retryCount) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return this.fetchFromApi(title, expectedType, cacheKey, retryCount + 1);
+                    }
+                    return null;
+                }
+
+                if (!cinemetaResponse.ok) return null;
+
+                const cinemetaData = await cinemetaResponse.json();
+                const meta = cinemetaData?.meta;
+                const imdbRating = parseFloat(meta?.imdbRating);
+
+                if (meta && imdbRating > 0) {
+                    const rating = {
+                        score: imdbRating.toFixed(1),
+                        confidence: bestMatch.score.toFixed(2),
+                        matchedTitle: meta.name || bestMatch.result.primaryTitle,
+                        type: bestMatch.result.titleType
+                    };
+
+                    this.cache[cacheKey] = {
+                        data: rating,
+                        timestamp: Date.now()
+                    };
+
+                    // Save cache asynchronously to not block the request
+                    this.saveCache();
+                    return rating;
                 }
             } catch (error) {
                 // Retry on network errors (but not on abort)
@@ -534,12 +601,6 @@
                 }
             }
             return null;
-        },
-
-        formatVotes(votes) {
-            if (votes >= 1000000) return (votes / 1000000).toFixed(1) + 'M';
-            if (votes >= 1000) return (votes / 1000).toFixed(1) + 'K';
-            return votes.toString();
         },
 
         async saveCache() {
@@ -556,7 +617,6 @@
                 <div class="imdb-rating-content">
                     <div class="imdb-logo">IMDb</div>
                     <div class="imdb-rating-score">${rating.score}</div>
-                    <div class="imdb-votes">${rating.votes}</div>
                 </div>
             `;
             return overlay;

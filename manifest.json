@@ -13,8 +13,12 @@
         "https://*.disneyplus.com/*",
         "https://*.netflix.com/*",
         "https://*.primevideo.com/*",
-        "https://api.imdbapi.dev/*"
+        "https://v3.sg.media-imdb.com/*",
+        "https://v3-cinemeta.strem.io/*"
     ],
+    "background": {
+        "service_worker": "background.js"
+    },
     "content_scripts": [
         {
             "matches": [
