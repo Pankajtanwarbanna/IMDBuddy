@@ -591,7 +591,7 @@
                 if (meta && imdbRating > 0) {
                     const rating = {
                         score: imdbRating.toFixed(1),
-                        votes: this.formatVotes(meta.imdbVotes || 0),
+                        votes: this.formatVotes(meta.imdbVotes),
                         confidence: bestMatch.score.toFixed(2),
                         matchedTitle: meta.name || bestMatch.result.primaryTitle,
                         type: bestMatch.result.titleType
@@ -618,6 +618,10 @@
         },
 
         formatVotes(votes) {
+            // Cinemeta often doesn't return a vote count at all for less
+            // mainstream titles (the field is simply absent, not zero).
+            // Show '-' rather than implying the title genuinely has zero votes.
+            if (votes === undefined || votes === null || isNaN(votes) || votes <= 0) return '-';
             if (votes >= 1000000) return (votes / 1000000).toFixed(1) + 'M';
             if (votes >= 1000) return (votes / 1000).toFixed(1) + 'K';
             return votes.toString();
