@@ -494,28 +494,35 @@
             this.requestTimes.push(Date.now());
         },
 
-        async fetchFromApi(title, expectedType, cacheKey, retryCount = 0) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-                // Step 1: resolve the title to an IMDb id via IMDb's own public suggestion endpoint.
-                const firstChar = (title.trim()[0] || 'a').toLowerCase();
-                const suggestionResponse = await fetch(
-                    `${BASE_CONFIG.SUGGESTION_API_URL}/${encodeURIComponent(firstChar)}/${encodeURIComponent(title)}.json`,
-                    {
-                        method: 'GET',
-                        signal: controller.signal,
-                        headers: {
-                            'Accept': 'application/json'
+        async fetchSuggestion(firstChar, title) {
+            // Routed through the background service worker to avoid CORS:
+            // IMDb's suggestion endpoint only returns Access-Control-Allow-Origin
+            // for requests originating from imdb.com itself. Content scripts run
+            // in the page's origin (e.g. netflix.com) and get blocked. The
+            // background service worker is exempt from that enforcement as long
+            // as the target origin is declared in manifest.json's host_permissions.
+            return new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                    { type: 'IMDBUDDY_FETCH_SUGGESTION', firstChar, title },
+                    (response) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                            return;
                         }
+                        resolve(response);
                     }
                 );
+            });
+        },
 
-                clearTimeout(timeoutId);
+        async fetchFromApi(title, expectedType, cacheKey, retryCount = 0) {
+            try {
+                // Step 1: resolve the title to an IMDb id via IMDb's own public suggestion endpoint.
+                const firstChar = (title.trim()[0] || 'a').toLowerCase();
+                const suggestionResult = await this.fetchSuggestion(firstChar, title);
 
                 // Handle rate limiting with exponential backoff
-                if (suggestionResponse.status === 429) {
+                if (suggestionResult.status === 429) {
                     if (retryCount < 2) {
                         const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -524,9 +531,9 @@
                     return null;
                 }
 
-                if (!suggestionResponse.ok || suggestionResponse.status === 499) return null;
+                if (!suggestionResult.ok || suggestionResult.status === 499) return null;
 
-                const suggestionData = await suggestionResponse.json();
+                const suggestionData = suggestionResult.data;
                 const candidates = suggestionData?.d || [];
                 if (candidates.length === 0) return null;
 
